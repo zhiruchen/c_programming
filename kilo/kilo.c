@@ -6,9 +6,16 @@
 #include <ctype.h>
 
 
+#define CTRL_KEY(k) ((k) & 0x1f)
+
+
+/*** terminal ***/
+
 struct termios orig_termios;
 
 void print_error_and_exit(const char *s) {
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
     perror(s);
     exit(1);
 }
@@ -50,26 +57,72 @@ void enableRawMode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) print_error_and_exit("tcsetattr");
 }
 
+char editorReadKey() {
+    int nread;
+    char c;
+
+    // read read 1 byte from std input into c
+    while ((nread = read(STDIN_FILENO, &c, 1)) != 1)
+    {
+        if (nread == -1 && errno != EAGAIN) print_error_and_exit("read");
+    }
+    
+    return c;
+}
+
+/*** input ***/
+
+
+void editorProcessKeypress() {
+    char c = editorReadKey();
+
+    switch (c)
+    {
+    case CTRL_KEY('q'):
+        write(STDOUT_FILENO, "\x1b[2J", 4);
+        write(STDOUT_FILENO, "\x1b[H", 3);
+        exit(0);
+        break;
+    
+    default:
+        break;
+    }
+}
+
+/*** ouput ***/
+
+// drawing each row of the buffer of text being edited
+void editorDrawRows() {
+    for (size_t y = 0; y < 24; y++)
+    {
+        write(STDOUT_FILENO, "~\r\n", 3);
+    }
+}
+
+void editorRefreshScreen() {
+    // \x1b: escape character 1 byte
+    // <esc>[2J will clear the entire screen
+    // write 4 bytes to terminal
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+
+    // \x1b[H: reposition the cursor to top-left pos in terminal
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
+    editorDrawRows();
+
+    write(STDOUT_FILENO, "\x1b[H", 3);
+}
+
+
+/*** init ***/
 
 int main(int argc, char const *argv[])
 {
     enableRawMode();
-
-   
-
-    // read read 1 byte  from std input into c
+    
     while (1) {
-        char c = '\0';
-        
-        if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) print_error_and_exit("read");
-
-        // iscntrl: whether a character is a control character
-        if (iscntrl(c)) {
-            printf("%d\r\n", c);
-        } else {
-            printf("%d ('%c')\r\n", c, c);
-        }
-        if (c == 'q') break;
+        editorRefreshScreen();
+        editorProcessKeypress();
     }
     printf("kilo\n");
     return 0;
